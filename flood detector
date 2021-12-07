@@ -1,0 +1,165 @@
+#include <WiFiNINA.h>
+
+// CapacitiveSensor - Version: Latest 
+#include <CapacitiveSensor.h>
+
+/* 
+  float waterlvl;
+  int height_from_sensors;
+*/
+
+#include "thingProperties.h"
+
+//sensor----
+int FloatSensor_Low = 2;
+int FloatSensor_Med = 3;
+int FloatSensor_High = 4;
+
+int buttonState_Low = 1;
+int buttonState_Med = 1;
+int buttonState_High = 1;
+long base_value = 75;    //This can change based on the base average value 
+int counter = 0;          //Use for computing averages
+long average_counter = 0;//Use for computing averages
+long average = 0;        //The average value
+long temp = 0;
+int buffer = 200;
+int height_from_wire = 0;
+int cap_per_cent = 80;
+
+
+int floodlvl = 0; //set the level of water that = FLOOD WARNING
+
+CapacitiveSensor cs_13_11 = CapacitiveSensor(13,11);    //What MegaOhm?
+//CapacitiveSensor cs_13_10 = CapacitiveSensor(13,10);    //What MegaOhm? Maybe separate them more
+//------
+
+//wifi stuffs
+WiFiClient client;
+
+char   HOST_NAME[] = "maker.ifttt.com";
+String PATH_NAME   = "/trigger/flood_warning/with/key/o-9x2l88pWjjj_cmMFsUT"; // change your EVENT-NAME and YOUR-KEY
+String queryString = "?value1=57&value2=25";
+//------
+
+
+void setup() {
+
+// initialize WiFi connection
+  WiFi.begin(SSID, PASS);
+
+  // Initialize serial and wait for port to open:
+  Serial.begin(9600);
+  // This delay gives the chance to wait for a Serial Monitor without blocking if none is found
+  delay(1500); 
+  while(!Serial);
+
+  // Defined in thingProperties.h
+  initProperties();
+
+  // Connect to Arduino IoT Cloud
+  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
+  
+  /*
+     The following function allows you to obtain more information
+     related to the state of network and IoT Cloud connection and errors
+     the higher number the more granular information you’ll get.
+     The default is 0 (only errors).
+     Maximum is 4
+ */
+  setDebugMessageLevel(2);
+  ArduinoCloud.printDebugInfo();
+  
+  
+  cs_13_11.set_CS_AutocaL_Millis(0xFFFFFFFF);     // turn off autocalibrate on channel 1
+  pinMode(FloatSensor_Low, INPUT_PULLUP);
+  pinMode(FloatSensor_Med, INPUT_PULLUP);
+  pinMode(FloatSensor_High, INPUT_PULLUP);
+  
+  /*
+  // connect to web server on port 80:
+  if (client.connect(HOST_NAME, 80)) {
+    // if connected:
+    Serial.println("Connected to server");
+  }
+  else {// if not connected:
+    Serial.println("connection failed");
+  }
+  */
+}
+
+void loop() {
+  ArduinoCloud.update();
+  
+  // Your code here 
+  height_from_sensors = 0;    //testing?????
+  
+   // *****SENSORS***********
+  buttonState_Low = digitalRead(FloatSensor_Low);
+  buttonState_Med = digitalRead(FloatSensor_Med);
+  buttonState_High = digitalRead(FloatSensor_High);
+
+
+    //Code for the Capacitance 
+
+   long start = millis();
+   long total1 =  cs_13_11.capacitiveSensor(30);
+   //long total2 =  cs_13_10.capacitiveSensor(30);
+   
+  
+    if (counter <= 30){
+      temp = total1;
+      average_counter = average_counter + temp;
+      counter++;
+    }
+
+  else{
+    counter = 0;
+  }
+
+ if (counter > 30){
+  average = average_counter / counter;
+  waterlvl = int(average); 
+  waterlvl = waterlvl - buffer;     
+  if (waterlvl > 0){
+    height_from_wire = waterlvl/cap_per_cent;
+  }
+  if (buttonState_Low == HIGH){
+    height_from_sensors = 4;     //Height based on what we measured
+  }
+  if (buttonState_Med == HIGH && buttonState_Low == HIGH){
+    height_from_sensors = 8;
+  }
+  if (buttonState_High == HIGH && buttonState_Med == HIGH && buttonState_Low == HIGH){
+    height_from_sensors = 12;
+  }
+  
+  counter = 0;
+  average_counter = 0;
+  average = 0;
+ }
+  
+   //queryString = queryString + String(waterlvl);
+
+  if (height_from_sensors > floodlvl) {   //need to declare floodlvl  if (waterlvl > floodlvl)
+
+    // make a HTTP request:
+    // send HTTP header
+    client.println("GET " + PATH_NAME + queryString + " HTTP/1.1");
+    client.println("Host: " + String(HOST_NAME));
+    client.println("Connection: close");
+    client.println(); // end HTTP header
+
+  /*
+    while (client.connected()) {
+      if (client.available()) {
+        // read an incoming byte from the server and print it to serial monitor:
+        char c = client.read();
+        Serial.print(c);
+      }
+    }
+  */
+}
+
+delay(1500);
+}
